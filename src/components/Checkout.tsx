@@ -183,12 +183,22 @@ const Checkout: React.FC<CheckoutProps> = ({ onBack, onComplete }) => {
                 </div>
                 <div className="flex justify-between text-sage-700">
                   <span>{t({ fr: 'Livraison', en: 'Shipping' })}:</span>
-                  <span>
-                    {getShipping() === 0 
-                      ? t({ fr: 'Gratuit', en: 'Free' })
-                      : `$${getShipping().toFixed(2)} CAD`
-                    }
-                  </span>
+                  <div className="text-right">
+                    <span>
+                      {getShipping() === 0 
+                        ? t({ fr: 'Gratuit', en: 'Free' })
+                        : `$${getShipping().toFixed(2)} CAD`
+                      }
+                    </span>
+                    {getShipping() > 0 && (
+                      <div className="text-xs text-sage-500 mt-1">
+                        {t({ 
+                          fr: `Ajoutez $${(30 - getSubtotal()).toFixed(2)} pour la livraison gratuite`, 
+                          en: `Add $${(30 - getSubtotal()).toFixed(2)} more for free shipping` 
+                        })}
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <div className="flex justify-between text-sage-700">
                   <span>{t({ fr: 'Taxes (QC)', en: 'Taxes (QC)' })}:</span>
@@ -249,7 +259,7 @@ const Checkout: React.FC<CheckoutProps> = ({ onBack, onComplete }) => {
                         type="email"
                         value={isAuthenticated ? user?.email || '' : guestForm.email}
                         onChange={(e) => !isAuthenticated && setGuestForm({...guestForm, email: e.target.value})}
-                        disabled={isAuthenticated}
+                        className="w-full px-4 py-3 rounded-xl border border-sage-200 focus:border-sage-400 focus:ring-2 focus:ring-sage-200 outline-none transition-all"
                         className="w-full px-4 py-3 rounded-xl border border-sage-200 focus:border-sage-400 focus:ring-2 focus:ring-sage-200 outline-none transition-all"
                       />
                       {errors.email && <p className="text-red-500 text-sm mt-1">{errors.email}</p>}

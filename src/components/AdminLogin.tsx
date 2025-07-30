@@ -109,12 +109,6 @@ const AdminLogin: React.FC<AdminLoginProps> = ({ onSuccess }) => {
               {isLoading ? 'Logging in...' : 'Login'}
             </button>
           </form>
-
-          <div className="mt-6 text-center text-sm text-sage-600">
-            <p>Default credentials:</p>
-            <p>Username: <code className="bg-sage-100 px-2 py-1 rounded">admin</code></p>
-            <p>Password: <code className="bg-sage-100 px-2 py-1 rounded">Heriot0929</code></p>
-          </div>
         </div>
       </div>
     </div>

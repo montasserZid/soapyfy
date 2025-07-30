@@ -37,14 +37,14 @@ const Header: React.FC<HeaderProps> = ({ onCheckout }) => {
       <nav className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
-          <div className="flex items-center gap-2">
+          <a href="#home" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
             <div className="w-10 h-10 bg-sage-600 rounded-full flex items-center justify-center">
               <Leaf className="w-6 h-6 text-cream" />
             </div>
             <span className="text-2xl font-serif font-bold text-sage-800 tracking-wide">
               Soapyfy
             </span>
-          </div>
+          </a>
 
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center space-x-8">
@@ -102,6 +102,19 @@ const Header: React.FC<HeaderProps> = ({ onCheckout }) => {
           {/* Mobile Menu Button */}
           <div className="md:hidden flex items-center gap-2">
             <LanguageToggle />
+            
+            {getTotalItems() > 0 && (
+              <button 
+                onClick={() => setCartOpen(true)}
+                className="relative p-2 text-sage-700 hover:text-sage-900 transition-colors animate-pulse"
+              >
+                <ShoppingBag className="w-6 h-6" />
+                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center animate-bounce">
+                  {getTotalItems()}
+                </span>
+              </button>
+            )}
+            
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
               className="p-2 text-sage-700"

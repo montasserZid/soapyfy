@@ -104,12 +104,22 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, onCheckout }) => {
                 </div>
                 <div className="flex justify-between text-sage-700">
                   <span>{t({ fr: 'Livraison', en: 'Shipping' })}:</span>
-                  <span>
-                    {getShipping() === 0 
-                      ? t({ fr: 'Gratuit', en: 'Free' })
-                      : `$${getShipping().toFixed(2)} CAD`
-                    }
-                  </span>
+                  <div className="text-right">
+                    <span>
+                      {getShipping() === 0 
+                        ? t({ fr: 'Gratuit', en: 'Free' })
+                        : `$${getShipping().toFixed(2)} CAD`
+                      }
+                    </span>
+                    {getShipping() > 0 && (
+                      <div className="text-xs text-sage-500 mt-1">
+                        {t({ 
+                          fr: `Ajoutez $${(30 - getSubtotal()).toFixed(2)} pour la livraison gratuite`, 
+                          en: `Add $${(30 - getSubtotal()).toFixed(2)} more for free shipping` 
+                        })}
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <div className="flex justify-between text-sage-700">
                   <span>{t({ fr: 'Taxes (QC)', en: 'Taxes (QC)' })}:</span>

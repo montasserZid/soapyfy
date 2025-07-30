@@ -17,6 +17,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [selectedCustomer, setSelectedCustomer] = useState<Order | null>(null);
 
   useEffect(() => {
     loadData();
@@ -225,16 +226,22 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                             </select>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                            <div className="flex gap-2">
+                            <div className="flex gap-1">
                               <button
                                 onClick={() => setSelectedOrder(order)}
-                                className="text-sage-600 hover:text-sage-900"
+                                className="text-sage-600 hover:text-sage-900 px-2 py-1 text-xs bg-sage-100 rounded hover:bg-sage-200 transition-colors"
                               >
-                                <Eye className="w-4 h-4" />
+                                Order Details
+                              </button>
+                              <button
+                                onClick={() => setSelectedCustomer(order)}
+                                className="text-blue-600 hover:text-blue-900 px-2 py-1 text-xs bg-blue-100 rounded hover:bg-blue-200 transition-colors"
+                              >
+                                Customer Details
                               </button>
                               <button
                                 onClick={() => handleDeleteOrder(order.id)}
-                                className="text-red-600 hover:text-red-900"
+                                className="text-red-600 hover:text-red-900 p-1"
                               >
                                 <Trash2 className="w-4 h-4" />
                               </button>
@@ -269,28 +276,18 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                 </div>
 
                 <div className="space-y-6">
-                  {/* Customer Info */}
-                  <div>
-                    <h3 className="font-medium text-sage-800 mb-3">Customer Information</h3>
-                    <div className="bg-sage-50 rounded-lg p-4 space-y-2">
-                      <p><strong>Email:</strong> {selectedOrder.guestInfo?.email || users.find(u => u.id === selectedOrder.userId)?.email}</p>
-                      {selectedOrder.guestInfo && (
-                        <>
-                          <p><strong>Name:</strong> {selectedOrder.guestInfo.name}</p>
-                          <p><strong>Phone:</strong> {selectedOrder.guestInfo.phone}</p>
-                          <p><strong>Address:</strong> {selectedOrder.guestInfo.address}, {selectedOrder.guestInfo.city}, {selectedOrder.guestInfo.postalCode}</p>
-                        </>
-                      )}
-                    </div>
-                  </div>
-
                   {/* Order Items */}
                   <div>
                     <h3 className="font-medium text-sage-800 mb-3">Order Items</h3>
                     <div className="space-y-2">
                       {selectedOrder.items.map((item, index) => (
-                        <div key={index} className="flex justify-between items-center bg-sage-50 rounded-lg p-3">
-                          <div>
+                        <div key={index} className="flex items-center gap-4 bg-sage-50 rounded-lg p-3">
+                          <img
+                            src={item.image}
+                            alt={t(item.name)}
+                            className="w-12 h-12 object-cover rounded-lg"
+                          />
+                          <div className="flex-1">
                             <p className="font-medium">{t(item.name)}</p>
                             <p className="text-sm text-sage-600">Quantity: {item.quantity}</p>
                           </div>
@@ -329,6 +326,69 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                     <p className="bg-sage-50 rounded-lg p-4">
                       {selectedOrder.paymentMethod === 'payLater' ? 'Pay Later (Cash on Delivery)' : 'Stripe (Credit Card)'}
                     </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Customer Details Modal */}
+      {selectedCustomer && (
+        <div className="fixed inset-0 z-50 overflow-hidden">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setSelectedCustomer(null)} />
+          <div className="absolute inset-0 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-2xl font-serif text-sage-800">Customer Details</h2>
+                  <button
+                    onClick={() => setSelectedCustomer(null)}
+                    className="p-2 hover:bg-sage-100 rounded-full transition-colors"
+                  >
+                    ×
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="bg-sage-50 rounded-lg p-4 space-y-3">
+                    <div>
+                      <label className="text-sm font-medium text-sage-600">Email</label>
+                      <p className="text-sage-800">{selectedCustomer.guestInfo?.email || users.find(u => u.id === selectedCustomer.userId)?.email || 'N/A'}</p>
+                    </div>
+                    
+                    {selectedCustomer.guestInfo && (
+                      <>
+                        <div>
+                          <label className="text-sm font-medium text-sage-600">Full Name</label>
+                          <p className="text-sage-800">{selectedCustomer.guestInfo.name}</p>
+                        </div>
+                        
+                        <div>
+                          <label className="text-sm font-medium text-sage-600">Phone</label>
+                          <p className="text-sage-800">{selectedCustomer.guestInfo.phone}</p>
+                        </div>
+                        
+                        <div>
+                          <label className="text-sm font-medium text-sage-600">Shipping Address</label>
+                          <p className="text-sage-800">
+                            {selectedCustomer.guestInfo.address}<br/>
+                            {selectedCustomer.guestInfo.city}, {selectedCustomer.guestInfo.postalCode}
+                          </p>
+                        </div>
+                      </>
+                    )}
+                    
+                    <div>
+                      <label className="text-sm font-medium text-sage-600">Order Date</label>
+                      <p className="text-sage-800">{new Date(selectedCustomer.createdAt).toLocaleDateString()}</p>
+                    </div>
+                    
+                    <div>
+                      <label className="text-sm font-medium text-sage-600">Order Status</label>
+                      <p className="text-sage-800 capitalize">{selectedCustomer.status}</p>
+                    </div>
                   </div>
                 </div>
               </div>
