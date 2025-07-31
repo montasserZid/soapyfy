@@ -30,6 +30,15 @@ const Checkout: React.FC<CheckoutProps> = ({ onBack, onComplete }) => {
     phone: ''
   });
 
+  // Separate shipping form for authenticated users
+  const [shippingForm, setShippingForm] = useState({
+    name: '',
+    address: '',
+    city: '',
+    postalCode: '',
+    phone: ''
+  });
+
   const [authForm, setAuthForm] = useState({
     email: '',
     password: ''
@@ -46,32 +55,37 @@ const Checkout: React.FC<CheckoutProps> = ({ onBack, onComplete }) => {
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
 
-    if (checkoutType === 'guest') {
-      if (!guestForm.email) newErrors.email = t({ fr: 'Email requis', en: 'Email required' });
-      else if (!validateEmail(guestForm.email)) newErrors.email = t({ fr: 'Email invalide', en: 'Invalid email' });
-      
-      if (!guestForm.name) newErrors.name = t({ fr: 'Nom requis', en: 'Name required' });
-      if (!guestForm.address) newErrors.address = t({ fr: 'Adresse requise', en: 'Address required' });
-      if (!guestForm.city) newErrors.city = t({ fr: 'Ville requise', en: 'City required' });
-      if (!guestForm.postalCode) newErrors.postalCode = t({ fr: 'Code postal requis', en: 'Postal code required' });
-      if (!guestForm.phone) newErrors.phone = t({ fr: 'Téléphone requis', en: 'Phone required' });
-    } else {
-      if (!authForm.email) newErrors.email = t({ fr: 'Email requis', en: 'Email required' });
-      else if (!validateEmail(authForm.email)) newErrors.email = t({ fr: 'Email invalide', en: 'Invalid email' });
-      
-      if (!authForm.password) newErrors.password = t({ fr: 'Mot de passe requis', en: 'Password required' });
-      else if (checkoutType === 'register' && authForm.password.length < 6) {
-        newErrors.password = t({ fr: 'Minimum 6 caractères', en: 'Minimum 6 characters' });
+    // For authenticated users, we already have email, for guests we need to validate it
+    if (!isAuthenticated) {
+      if (checkoutType === 'guest') {
+        if (!guestForm.email) newErrors.email = t({ fr: 'Email requis', en: 'Email required' });
+        else if (!validateEmail(guestForm.email)) newErrors.email = t({ fr: 'Email invalide', en: 'Invalid email' });
+      } else {
+        // For login/register, validate auth form
+        if (!authForm.email) newErrors.authEmail = t({ fr: 'Email requis', en: 'Email required' });
+        else if (!validateEmail(authForm.email)) newErrors.authEmail = t({ fr: 'Email invalide', en: 'Invalid email' });
+        
+        if (!authForm.password) newErrors.password = t({ fr: 'Mot de passe requis', en: 'Password required' });
+        else if (checkoutType === 'register' && authForm.password.length < 6) {
+          newErrors.password = t({ fr: 'Minimum 6 caractères', en: 'Minimum 6 characters' });
+        }
       }
     }
+
+    // Always validate shipping information (use appropriate form based on checkout type)
+    const shipping = checkoutType === 'guest' ? guestForm : shippingForm;
+    
+    if (!shipping.name) newErrors.name = t({ fr: 'Nom requis', en: 'Name required' });
+    if (!shipping.address) newErrors.address = t({ fr: 'Adresse requise', en: 'Address required' });
+    if (!shipping.city) newErrors.city = t({ fr: 'Ville requise', en: 'City required' });
+    if (!shipping.postalCode) newErrors.postalCode = t({ fr: 'Code postal requis', en: 'Postal code required' });
+    if (!shipping.phone) newErrors.phone = t({ fr: 'Téléphone requis', en: 'Phone required' });
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
   const handleAuth = async () => {
-    if (!validateForm()) return;
-
     setIsProcessing(true);
     let success = false;
 
@@ -94,18 +108,50 @@ const Checkout: React.FC<CheckoutProps> = ({ onBack, onComplete }) => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!validateForm()) return;
-
-    // Handle authentication if needed
+    // Handle authentication first if needed
     if (!isAuthenticated && checkoutType !== 'guest') {
+      // Validate auth fields
+      const authErrors: Record<string, string> = {};
+      if (!authForm.email) authErrors.authEmail = t({ fr: 'Email requis', en: 'Email required' });
+      else if (!validateEmail(authForm.email)) authErrors.authEmail = t({ fr: 'Email invalide', en: 'Invalid email' });
+      
+      if (!authForm.password) authErrors.password = t({ fr: 'Mot de passe requis', en: 'Password required' });
+      else if (checkoutType === 'register' && authForm.password.length < 6) {
+        authErrors.password = t({ fr: 'Minimum 6 caractères', en: 'Minimum 6 characters' });
+      }
+
+      if (Object.keys(authErrors).length > 0) {
+        setErrors(authErrors);
+        return;
+      }
+
       const authSuccess = await handleAuth();
       if (!authSuccess) return;
     }
 
+    // Now validate the complete form
+    if (!validateForm()) return;
+
     setIsProcessing(true);
 
-    // Create order
     try {
+      // Prepare shipping info based on checkout type
+      const shippingInfo = checkoutType === 'guest' ? {
+        email: guestForm.email,
+        name: guestForm.name,
+        address: guestForm.address,
+        city: guestForm.city,
+        postalCode: guestForm.postalCode,
+        phone: guestForm.phone
+      } : {
+        email: user?.email || '',
+        name: shippingForm.name,
+        address: shippingForm.address,
+        city: shippingForm.city,
+        postalCode: shippingForm.postalCode,
+        phone: shippingForm.phone
+      };
+
       const orderData = {
         items: [...items],
         subtotal: getSubtotal(),
@@ -113,17 +159,14 @@ const Checkout: React.FC<CheckoutProps> = ({ onBack, onComplete }) => {
         taxes: getTaxes(),
         total: getTotalPrice(),
         paymentMethod,
-        guestInfo: checkoutType === 'guest' ? guestForm : undefined,
+        guestInfo: shippingInfo,
         status: 'pending' as const,
         createdAt: new Date().toISOString(),
         ...(user?.id && { userId: user.id })
       };
 
       await createOrder(orderData);
-
-      // Clear cart
       clearCart();
-
       setIsProcessing(false);
       onComplete();
     } catch (error) {
@@ -242,7 +285,7 @@ const Checkout: React.FC<CheckoutProps> = ({ onBack, onComplete }) => {
                 </div>
               )}
 
-              {/* Guest Form */}
+              {/* Shipping Information Form */}
               {(checkoutType === 'guest' || isAuthenticated) && (
                 <div className="space-y-4">
                   <h3 className="text-lg font-serif text-sage-800 flex items-center gap-2">
@@ -258,9 +301,15 @@ const Checkout: React.FC<CheckoutProps> = ({ onBack, onComplete }) => {
                       <input
                         type="email"
                         value={isAuthenticated ? user?.email || '' : guestForm.email}
-                        onChange={(e) => !isAuthenticated && setGuestForm({...guestForm, email: e.target.value})}
-                        className="w-full px-4 py-3 rounded-xl border border-sage-200 focus:border-sage-400 focus:ring-2 focus:ring-sage-200 outline-none transition-all"
-                        className="w-full px-4 py-3 rounded-xl border border-sage-200 focus:border-sage-400 focus:ring-2 focus:ring-sage-200 outline-none transition-all"
+                        onChange={(e) => {
+                          if (!isAuthenticated && checkoutType === 'guest') {
+                            setGuestForm({...guestForm, email: e.target.value});
+                          }
+                        }}
+                        disabled={isAuthenticated}
+                        className={`w-full px-4 py-3 rounded-xl border border-sage-200 focus:border-sage-400 focus:ring-2 focus:ring-sage-200 outline-none transition-all ${
+                          isAuthenticated ? 'bg-sage-50 cursor-not-allowed' : ''
+                        }`}
                       />
                       {errors.email && <p className="text-red-500 text-sm mt-1">{errors.email}</p>}
                     </div>
@@ -271,8 +320,14 @@ const Checkout: React.FC<CheckoutProps> = ({ onBack, onComplete }) => {
                       </label>
                       <input
                         type="text"
-                        value={guestForm.name}
-                        onChange={(e) => setGuestForm({...guestForm, name: e.target.value})}
+                        value={checkoutType === 'guest' ? guestForm.name : shippingForm.name}
+                        onChange={(e) => {
+                          if (checkoutType === 'guest') {
+                            setGuestForm({...guestForm, name: e.target.value});
+                          } else {
+                            setShippingForm({...shippingForm, name: e.target.value});
+                          }
+                        }}
                         className="w-full px-4 py-3 rounded-xl border border-sage-200 focus:border-sage-400 focus:ring-2 focus:ring-sage-200 outline-none transition-all"
                       />
                       {errors.name && <p className="text-red-500 text-sm mt-1">{errors.name}</p>}
@@ -284,8 +339,14 @@ const Checkout: React.FC<CheckoutProps> = ({ onBack, onComplete }) => {
                       </label>
                       <input
                         type="text"
-                        value={guestForm.address}
-                        onChange={(e) => setGuestForm({...guestForm, address: e.target.value})}
+                        value={checkoutType === 'guest' ? guestForm.address : shippingForm.address}
+                        onChange={(e) => {
+                          if (checkoutType === 'guest') {
+                            setGuestForm({...guestForm, address: e.target.value});
+                          } else {
+                            setShippingForm({...shippingForm, address: e.target.value});
+                          }
+                        }}
                         className="w-full px-4 py-3 rounded-xl border border-sage-200 focus:border-sage-400 focus:ring-2 focus:ring-sage-200 outline-none transition-all"
                       />
                       {errors.address && <p className="text-red-500 text-sm mt-1">{errors.address}</p>}
@@ -297,8 +358,14 @@ const Checkout: React.FC<CheckoutProps> = ({ onBack, onComplete }) => {
                       </label>
                       <input
                         type="text"
-                        value={guestForm.city}
-                        onChange={(e) => setGuestForm({...guestForm, city: e.target.value})}
+                        value={checkoutType === 'guest' ? guestForm.city : shippingForm.city}
+                        onChange={(e) => {
+                          if (checkoutType === 'guest') {
+                            setGuestForm({...guestForm, city: e.target.value});
+                          } else {
+                            setShippingForm({...shippingForm, city: e.target.value});
+                          }
+                        }}
                         className="w-full px-4 py-3 rounded-xl border border-sage-200 focus:border-sage-400 focus:ring-2 focus:ring-sage-200 outline-none transition-all"
                       />
                       {errors.city && <p className="text-red-500 text-sm mt-1">{errors.city}</p>}
@@ -310,8 +377,14 @@ const Checkout: React.FC<CheckoutProps> = ({ onBack, onComplete }) => {
                       </label>
                       <input
                         type="text"
-                        value={guestForm.postalCode}
-                        onChange={(e) => setGuestForm({...guestForm, postalCode: e.target.value})}
+                        value={checkoutType === 'guest' ? guestForm.postalCode : shippingForm.postalCode}
+                        onChange={(e) => {
+                          if (checkoutType === 'guest') {
+                            setGuestForm({...guestForm, postalCode: e.target.value});
+                          } else {
+                            setShippingForm({...shippingForm, postalCode: e.target.value});
+                          }
+                        }}
                         className="w-full px-4 py-3 rounded-xl border border-sage-200 focus:border-sage-400 focus:ring-2 focus:ring-sage-200 outline-none transition-all"
                       />
                       {errors.postalCode && <p className="text-red-500 text-sm mt-1">{errors.postalCode}</p>}
@@ -323,8 +396,14 @@ const Checkout: React.FC<CheckoutProps> = ({ onBack, onComplete }) => {
                       </label>
                       <input
                         type="tel"
-                        value={guestForm.phone}
-                        onChange={(e) => setGuestForm({...guestForm, phone: e.target.value})}
+                        value={checkoutType === 'guest' ? guestForm.phone : shippingForm.phone}
+                        onChange={(e) => {
+                          if (checkoutType === 'guest') {
+                            setGuestForm({...guestForm, phone: e.target.value});
+                          } else {
+                            setShippingForm({...shippingForm, phone: e.target.value});
+                          }
+                        }}
                         className="w-full px-4 py-3 rounded-xl border border-sage-200 focus:border-sage-400 focus:ring-2 focus:ring-sage-200 outline-none transition-all"
                       />
                       {errors.phone && <p className="text-red-500 text-sm mt-1">{errors.phone}</p>}
@@ -352,9 +431,9 @@ const Checkout: React.FC<CheckoutProps> = ({ onBack, onComplete }) => {
                       type="email"
                       value={authForm.email}
                       onChange={(e) => setAuthForm({...authForm, email: e.target.value})}
-                      className="w-full px-4 py-3 rounded-xl border border-sage-200 focus:border-sage-400 focus:ring-2 focus:ring-sage-200 outline-none transition-all disabled:bg-sage-50"
+                      className="w-full px-4 py-3 rounded-xl border border-sage-200 focus:border-sage-400 focus:ring-2 focus:ring-sage-200 outline-none transition-all"
                     />
-                    {errors.email && <p className="text-red-500 text-sm mt-1">{errors.email}</p>}
+                    {errors.authEmail && <p className="text-red-500 text-sm mt-1">{errors.authEmail}</p>}
                   </div>
 
                   <div>
