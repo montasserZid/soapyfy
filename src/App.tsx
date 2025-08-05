@@ -14,11 +14,12 @@ import Checkout from './components/Checkout';
 import OrderConfirmation from './components/OrderConfirmation';
 import AdminLogin from './components/AdminLogin';
 import AdminDashboard from './components/AdminDashboard';
+import MyOrders from './components/MyOrders';
 import { useAuth } from './context/AuthContext';
 
 function AppContent() {
   const { adminLogout, isAdmin } = useAuth();
-  const [currentView, setCurrentView] = useState<'home' | 'checkout' | 'confirmation' | 'admin' | 'adminDashboard'>('home');
+  const [currentView, setCurrentView] = useState<'home' | 'checkout' | 'confirmation' | 'admin' | 'adminDashboard' | 'myOrders'>('home');
 
   // Check if we're on the admin route
   React.useEffect(() => {
@@ -68,12 +69,19 @@ function AppContent() {
       {currentView === 'home' && (
         <>
           <ShippingBanner />
-          <Header onCheckout={handleCheckout} />
+          <Header onCheckout={handleCheckout} setCurrentView={setCurrentView} />
           <Hero />
           <Products />
           <About />
           <Contact />
           <Footer />
+        </>
+      )}
+      
+      {currentView === 'myOrders' && (
+        <>
+          <ShippingBanner />
+          <MyOrders onBack={handleBackToHome} />
         </>
       )}
       

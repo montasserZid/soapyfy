@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
-import { ShoppingBag, Menu, X, Leaf, User, LogOut } from 'lucide-react';
+import { ShoppingBag, Menu, X, Leaf, User, LogOut, Package } from 'lucide-react';
+import { collection, query, where, getDocs } from 'firebase/firestore';
+import { db } from '../config/firebase';
 import LanguageToggle from './LanguageToggle';
 import { useLanguage } from '../context/LanguageContext';
 import { useCart } from '../context/CartContext';
@@ -9,12 +11,15 @@ import Auth from './Auth';
 
 interface HeaderProps {
   onCheckout: () => void;
+  setCurrentView?: (view: 'home' | 'checkout' | 'confirmation' | 'admin' | 'adminDashboard' | 'myOrders') => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ onCheckout }) => {
+const Header: React.FC<HeaderProps> = ({ onCheckout, setCurrentView }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
+  const [orderCount, setOrderCount] = useState<number | null>(null);
+  const [loadingOrders, setLoadingOrders] = useState(false);
   const { t } = useLanguage();
   const { getTotalItems } = useCart();
   const { user, logout, isAuthenticated } = useAuth();
@@ -25,6 +30,34 @@ const Header: React.FC<HeaderProps> = ({ onCheckout }) => {
     about: { fr: 'À Propos', en: 'About' },
     contact: { fr: 'Contact', en: 'Contact' }
   };
+
+  // Load user orders count when authenticated
+  React.useEffect(() => {
+    const loadOrderCount = async () => {
+      if (isAuthenticated && user?.id) {
+        setLoadingOrders(true);
+        try {
+          const userOrdersQuery = query(
+            collection(db, 'orders'), 
+            // where('userId', '==', user.id)
+            where('guestInfo.email', '==', user.email)
+          );
+          const snapshot = await getDocs(userOrdersQuery);
+          setOrderCount(snapshot.size);
+        } catch (error) {
+          console.error('Error loading order count:', error);
+          setOrderCount(0);
+        } finally {
+          setLoadingOrders(false);
+        }
+      } else {
+        setOrderCount(null);
+        setLoadingOrders(false);
+      }
+    };
+
+    loadOrderCount();
+  }, [isAuthenticated, user?.id]);
 
   const handleCheckout = () => {
     setCartOpen(false);
@@ -57,6 +90,21 @@ const Header: React.FC<HeaderProps> = ({ onCheckout }) => {
                 {t(value)}
               </a>
             ))}
+            
+            {/* My Orders - Desktop */}
+            {isAuthenticated && (
+              <button
+                onClick={() => setCurrentView?.('myOrders')}
+                className="flex items-center gap-2 text-sage-700 hover:text-sage-900 font-medium transition-colors duration-200 hover:underline underline-offset-4"
+              >
+                <Package className="w-4 h-4" />
+                {loadingOrders ? (
+                  t({ fr: 'Mes Commandes', en: 'My Orders' })
+                ) : (
+                  `${t({ fr: 'Mes Commandes', en: 'My Orders' })}${orderCount !== null ? ` (${orderCount})` : ''}`
+                )}
+              </button>
+            )}
           </div>
 
           {/* Desktop Actions */}
@@ -138,6 +186,25 @@ const Header: React.FC<HeaderProps> = ({ onCheckout }) => {
                   {t(value)}
                 </a>
               ))}
+              
+              {/* My Orders - Mobile */}
+              {isAuthenticated && (
+                <button
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    setCurrentView?.('myOrders');
+                  }}
+                  className="flex items-center gap-2 text-sage-700 hover:text-sage-900 font-medium px-4 py-2 transition-colors"
+                >
+                  <Package className="w-5 h-5" />
+                  {loadingOrders ? (
+                    t({ fr: 'Mes Commandes', en: 'My Orders' })
+                  ) : (
+                    `${t({ fr: 'Mes Commandes', en: 'My Orders' })}${orderCount !== null ? ` (${orderCount})` : ''}`
+                  )}
+                </button>
+              )}
+              
               <div className="px-4 py-2">
                 {!isAuthenticated && (
                   <button 

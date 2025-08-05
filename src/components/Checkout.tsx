@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ArrowLeft, CreditCard, Truck, User, Mail, Lock, Eye, EyeOff } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import { createOrder } from '../services/firebaseService';
+import { collection, query, where, getDocs, limit } from 'firebase/firestore';
+import { db } from '../config/firebase';
 
 interface CheckoutProps {
   onBack: () => void;
@@ -46,6 +48,50 @@ const Checkout: React.FC<CheckoutProps> = ({ onBack, onComplete }) => {
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  // Set checkout type based on authentication status
+  useEffect(() => {
+    if (isAuthenticated) {
+      // User is already logged in, no need for guest/login/register selection
+      setCheckoutType('login'); // Use 'login' to indicate authenticated user
+    } else {
+      // User is not authenticated, default to guest
+      setCheckoutType('guest');
+    }
+  }, [isAuthenticated]);
+  // Auto-fill form when user is authenticated
+  useEffect(() => {
+    const autoFillUserData = async () => {
+      if (isAuthenticated && user?.id) {
+        try {
+          // Get user's most recent order to pre-fill shipping info
+          const userOrdersQuery = query(
+            collection(db, 'orders'), 
+            where('userId', '==', user.id),
+            limit(1)
+          );
+          const snapshot = await getDocs(userOrdersQuery);
+          
+          if (!snapshot.empty) {
+            const lastOrder = snapshot.docs[0].data();
+            if (lastOrder.guestInfo) {
+              setShippingForm({
+                name: lastOrder.guestInfo.name || '',
+                address: lastOrder.guestInfo.address || '',
+                city: lastOrder.guestInfo.city || '',
+                postalCode: lastOrder.guestInfo.postalCode || '',
+                phone: lastOrder.guestInfo.phone || ''
+              });
+            }
+          }
+        } catch (error) {
+          console.error('Error auto-filling user data:', error);
+        }
+      }
+    };
+
+    autoFillUserData();
+  }, [isAuthenticated, user?.id]);
+
   // Validation
   const validateEmail = (email: string) => {
     const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -55,20 +101,29 @@ const Checkout: React.FC<CheckoutProps> = ({ onBack, onComplete }) => {
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
 
-    // For authenticated users, we already have email, for guests we need to validate it
-    if (!isAuthenticated) {
-      if (checkoutType === 'guest') {
-        if (!guestForm.email) newErrors.email = t({ fr: 'Email requis', en: 'Email required' });
-        else if (!validateEmail(guestForm.email)) newErrors.email = t({ fr: 'Email invalide', en: 'Invalid email' });
-      } else {
-        // For login/register, validate auth form
-        if (!authForm.email) newErrors.authEmail = t({ fr: 'Email requis', en: 'Email required' });
-        else if (!validateEmail(authForm.email)) newErrors.authEmail = t({ fr: 'Email invalide', en: 'Invalid email' });
-        
-        if (!authForm.password) newErrors.password = t({ fr: 'Mot de passe requis', en: 'Password required' });
-        else if (checkoutType === 'register' && authForm.password.length < 6) {
-          newErrors.password = t({ fr: 'Minimum 6 caractères', en: 'Minimum 6 characters' });
-        }
+    // Get the current email based on checkout type and auth status
+    let currentEmail = '';
+    if (isAuthenticated) {
+      currentEmail = user?.email || '';
+    } else if (checkoutType === 'guest') {
+      currentEmail = guestForm.email;
+    } else {
+      currentEmail = authForm.email;
+    }
+
+    // Validate email
+    if (!currentEmail) {
+      newErrors.email = t({ fr: 'Email requis', en: 'Email required' });
+    } else if (!validateEmail(currentEmail)) {
+      newErrors.email = t({ fr: 'Email invalide', en: 'Invalid email' });
+    }
+
+    // For non-authenticated users doing login/register, validate auth form
+    if (!isAuthenticated && (checkoutType === 'login' || checkoutType === 'register')) {
+      if (!authForm.password) {
+        newErrors.password = t({ fr: 'Mot de passe requis', en: 'Password required' });
+      } else if (checkoutType === 'register' && authForm.password.length < 6) {
+        newErrors.password = t({ fr: 'Minimum 6 caractères', en: 'Minimum 6 characters' });
       }
     }
 
@@ -112,8 +167,8 @@ const Checkout: React.FC<CheckoutProps> = ({ onBack, onComplete }) => {
     if (!isAuthenticated && checkoutType !== 'guest') {
       // Validate auth fields
       const authErrors: Record<string, string> = {};
-      if (!authForm.email) authErrors.authEmail = t({ fr: 'Email requis', en: 'Email required' });
-      else if (!validateEmail(authForm.email)) authErrors.authEmail = t({ fr: 'Email invalide', en: 'Invalid email' });
+      if (!authForm.email) authErrors.email = t({ fr: 'Email requis', en: 'Email required' });
+      else if (!validateEmail(authForm.email)) authErrors.email = t({ fr: 'Email invalide', en: 'Invalid email' });
       
       if (!authForm.password) authErrors.password = t({ fr: 'Mot de passe requis', en: 'Password required' });
       else if (checkoutType === 'register' && authForm.password.length < 6) {
@@ -136,21 +191,33 @@ const Checkout: React.FC<CheckoutProps> = ({ onBack, onComplete }) => {
 
     try {
       // Prepare shipping info based on checkout type
-      const shippingInfo = checkoutType === 'guest' ? {
-        email: guestForm.email,
-        name: guestForm.name,
-        address: guestForm.address,
-        city: guestForm.city,
-        postalCode: guestForm.postalCode,
-        phone: guestForm.phone
-      } : {
-        email: user?.email || '',
-        name: shippingForm.name,
-        address: shippingForm.address,
-        city: shippingForm.city,
-        postalCode: shippingForm.postalCode,
-        phone: shippingForm.phone
+      // Determine email based on authentication status and checkout type
+      let userEmail = '';
+      if (isAuthenticated && user?.email) {
+        userEmail = user.email;
+      } else if (checkoutType === 'guest') {
+        userEmail = guestForm.email;
+      } else {
+        userEmail = authForm.email;
+      }
+
+      // Prepare shipping info
+      const shippingInfo = {
+        email: userEmail,
+        name: isAuthenticated ? shippingForm.name : (checkoutType === 'guest' ? guestForm.name : shippingForm.name),
+        address: isAuthenticated ? shippingForm.address : (checkoutType === 'guest' ? guestForm.address : shippingForm.address),
+        city: isAuthenticated ? shippingForm.city : (checkoutType === 'guest' ? guestForm.city : shippingForm.city),
+        postalCode: isAuthenticated ? shippingForm.postalCode : (checkoutType === 'guest' ? guestForm.postalCode : shippingForm.postalCode),
+        phone: isAuthenticated ? shippingForm.phone : (checkoutType === 'guest' ? guestForm.phone : shippingForm.phone)
       };
+
+      console.log('🔍 guestForm.email:', guestForm.email);
+      console.log('🔍 checkoutType:', checkoutType);
+      console.log('🔍 isAuthenticated:', isAuthenticated);
+      console.log('🔍 user?.email:', user?.email);
+      console.log('🔍 authForm.email:', authForm.email);
+      console.log('📧 Final email being stored:', userEmail);
+      console.log('📦 Complete shippingInfo:', shippingInfo);
 
       const orderData = {
         items: [...items],
@@ -285,134 +352,7 @@ const Checkout: React.FC<CheckoutProps> = ({ onBack, onComplete }) => {
                 </div>
               )}
 
-              {/* Shipping Information Form */}
-              {(checkoutType === 'guest' || isAuthenticated) && (
-                <div className="space-y-4">
-                  <h3 className="text-lg font-serif text-sage-800 flex items-center gap-2">
-                    <User className="w-5 h-5" />
-                    {t({ fr: 'Informations de livraison', en: 'Shipping Information' })}
-                  </h3>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sage-700 font-medium mb-2">
-                        {t({ fr: 'Email', en: 'Email' })}
-                      </label>
-                      <input
-                        type="email"
-                        value={isAuthenticated ? user?.email || '' : guestForm.email}
-                        onChange={(e) => {
-                          if (!isAuthenticated && checkoutType === 'guest') {
-                            setGuestForm({...guestForm, email: e.target.value});
-                          }
-                        }}
-                        disabled={isAuthenticated}
-                        className={`w-full px-4 py-3 rounded-xl border border-sage-200 focus:border-sage-400 focus:ring-2 focus:ring-sage-200 outline-none transition-all ${
-                          isAuthenticated ? 'bg-sage-50 cursor-not-allowed' : ''
-                        }`}
-                      />
-                      {errors.email && <p className="text-red-500 text-sm mt-1">{errors.email}</p>}
-                    </div>
-
-                    <div>
-                      <label className="block text-sage-700 font-medium mb-2">
-                        {t({ fr: 'Nom complet', en: 'Full Name' })}
-                      </label>
-                      <input
-                        type="text"
-                        value={checkoutType === 'guest' ? guestForm.name : shippingForm.name}
-                        onChange={(e) => {
-                          if (checkoutType === 'guest') {
-                            setGuestForm({...guestForm, name: e.target.value});
-                          } else {
-                            setShippingForm({...shippingForm, name: e.target.value});
-                          }
-                        }}
-                        className="w-full px-4 py-3 rounded-xl border border-sage-200 focus:border-sage-400 focus:ring-2 focus:ring-sage-200 outline-none transition-all"
-                      />
-                      {errors.name && <p className="text-red-500 text-sm mt-1">{errors.name}</p>}
-                    </div>
-
-                    <div className="md:col-span-2">
-                      <label className="block text-sage-700 font-medium mb-2">
-                        {t({ fr: 'Adresse', en: 'Address' })}
-                      </label>
-                      <input
-                        type="text"
-                        value={checkoutType === 'guest' ? guestForm.address : shippingForm.address}
-                        onChange={(e) => {
-                          if (checkoutType === 'guest') {
-                            setGuestForm({...guestForm, address: e.target.value});
-                          } else {
-                            setShippingForm({...shippingForm, address: e.target.value});
-                          }
-                        }}
-                        className="w-full px-4 py-3 rounded-xl border border-sage-200 focus:border-sage-400 focus:ring-2 focus:ring-sage-200 outline-none transition-all"
-                      />
-                      {errors.address && <p className="text-red-500 text-sm mt-1">{errors.address}</p>}
-                    </div>
-
-                    <div>
-                      <label className="block text-sage-700 font-medium mb-2">
-                        {t({ fr: 'Ville', en: 'City' })}
-                      </label>
-                      <input
-                        type="text"
-                        value={checkoutType === 'guest' ? guestForm.city : shippingForm.city}
-                        onChange={(e) => {
-                          if (checkoutType === 'guest') {
-                            setGuestForm({...guestForm, city: e.target.value});
-                          } else {
-                            setShippingForm({...shippingForm, city: e.target.value});
-                          }
-                        }}
-                        className="w-full px-4 py-3 rounded-xl border border-sage-200 focus:border-sage-400 focus:ring-2 focus:ring-sage-200 outline-none transition-all"
-                      />
-                      {errors.city && <p className="text-red-500 text-sm mt-1">{errors.city}</p>}
-                    </div>
-
-                    <div>
-                      <label className="block text-sage-700 font-medium mb-2">
-                        {t({ fr: 'Code postal', en: 'Postal Code' })}
-                      </label>
-                      <input
-                        type="text"
-                        value={checkoutType === 'guest' ? guestForm.postalCode : shippingForm.postalCode}
-                        onChange={(e) => {
-                          if (checkoutType === 'guest') {
-                            setGuestForm({...guestForm, postalCode: e.target.value});
-                          } else {
-                            setShippingForm({...shippingForm, postalCode: e.target.value});
-                          }
-                        }}
-                        className="w-full px-4 py-3 rounded-xl border border-sage-200 focus:border-sage-400 focus:ring-2 focus:ring-sage-200 outline-none transition-all"
-                      />
-                      {errors.postalCode && <p className="text-red-500 text-sm mt-1">{errors.postalCode}</p>}
-                    </div>
-
-                    <div className="md:col-span-2">
-                      <label className="block text-sage-700 font-medium mb-2">
-                        {t({ fr: 'Téléphone', en: 'Phone' })}
-                      </label>
-                      <input
-                        type="tel"
-                        value={checkoutType === 'guest' ? guestForm.phone : shippingForm.phone}
-                        onChange={(e) => {
-                          if (checkoutType === 'guest') {
-                            setGuestForm({...guestForm, phone: e.target.value});
-                          } else {
-                            setShippingForm({...shippingForm, phone: e.target.value});
-                          }
-                        }}
-                        className="w-full px-4 py-3 rounded-xl border border-sage-200 focus:border-sage-400 focus:ring-2 focus:ring-sage-200 outline-none transition-all"
-                      />
-                      {errors.phone && <p className="text-red-500 text-sm mt-1">{errors.phone}</p>}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Auth Form */}
+              {/* Auth Form for Login/Register */}
               {!isAuthenticated && (checkoutType === 'login' || checkoutType === 'register') && (
                 <div className="space-y-4">
                   <h3 className="text-lg font-serif text-sage-800 flex items-center gap-2">
@@ -432,8 +372,9 @@ const Checkout: React.FC<CheckoutProps> = ({ onBack, onComplete }) => {
                       value={authForm.email}
                       onChange={(e) => setAuthForm({...authForm, email: e.target.value})}
                       className="w-full px-4 py-3 rounded-xl border border-sage-200 focus:border-sage-400 focus:ring-2 focus:ring-sage-200 outline-none transition-all"
+                      placeholder={t({ fr: 'votre@email.com', en: 'your@email.com' })}
                     />
-                    {errors.authEmail && <p className="text-red-500 text-sm mt-1">{errors.authEmail}</p>}
+                    {errors.email && <p className="text-red-500 text-sm mt-1">{errors.email}</p>}
                   </div>
 
                   <div>
@@ -446,6 +387,10 @@ const Checkout: React.FC<CheckoutProps> = ({ onBack, onComplete }) => {
                         value={authForm.password}
                         onChange={(e) => setAuthForm({...authForm, password: e.target.value})}
                         className="w-full px-4 py-3 pr-12 rounded-xl border border-sage-200 focus:border-sage-400 focus:ring-2 focus:ring-sage-200 outline-none transition-all"
+                        placeholder={checkoutType === 'register' 
+                          ? t({ fr: 'Minimum 6 caractères', en: 'Minimum 6 characters' })
+                          : t({ fr: 'Votre mot de passe', en: 'Your password' })
+                        }
                       />
                       <button
                         type="button"
@@ -458,9 +403,152 @@ const Checkout: React.FC<CheckoutProps> = ({ onBack, onComplete }) => {
                     {errors.password && <p className="text-red-500 text-sm mt-1">{errors.password}</p>}
                   </div>
 
-                  {errors.auth && <p className="text-red-500 text-sm">{errors.auth}</p>}
+                  {errors.auth && (
+                    <div className="p-3 bg-red-50 border border-red-200 rounded-xl">
+                      <p className="text-red-600 text-sm">{errors.auth}</p>
+                    </div>
+                  )}
                 </div>
               )}
+
+              {/* Shipping Information Form */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-serif text-sage-800 flex items-center gap-2">
+                  <User className="w-5 h-5" />
+                  {t({ fr: 'Informations de livraison', en: 'Shipping Information' })}
+                </h3>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sage-700 font-medium mb-2">
+                      {t({ fr: 'Email', en: 'Email' })}
+                    </label>
+                    <input
+                      type="email"
+                      value={
+                        isAuthenticated 
+                          ? user?.email || '' 
+                          : checkoutType === 'guest' 
+                            ? guestForm.email 
+                            : authForm.email
+                      }
+                      onChange={(e) => {
+                        if (!isAuthenticated && checkoutType === 'guest') {
+                          setGuestForm({...guestForm, email: e.target.value});
+                        } else if (!isAuthenticated && (checkoutType === 'login' || checkoutType === 'register')) {
+                          setAuthForm({...authForm, email: e.target.value});
+                        }
+                      }}
+                      disabled={isAuthenticated}
+                      className={`w-full px-4 py-3 rounded-xl border border-sage-200 focus:border-sage-400 focus:ring-2 focus:ring-sage-200 outline-none transition-all ${
+                        isAuthenticated ? 'bg-sage-50 cursor-not-allowed' : ''
+                      }`}
+                      placeholder={t({ fr: 'votre@email.com', en: 'your@email.com' })}
+                    />
+                    {errors.email && <p className="text-red-500 text-sm mt-1">{errors.email}</p>}
+                  </div>
+
+                  <div>
+                    <label className="block text-sage-700 font-medium mb-2">
+                      {t({ fr: 'Nom complet', en: 'Full Name' })}
+                    </label>
+                    <input
+                      type="text"
+                      value={checkoutType === 'guest' ? guestForm.name : shippingForm.name}
+                      onChange={(e) => {
+                        if (checkoutType === 'guest') {
+                          setGuestForm({...guestForm, name: e.target.value});
+                        } else {
+                          setShippingForm({...shippingForm, name: e.target.value});
+                        }
+                      }}
+                      className="w-full px-4 py-3 rounded-xl border border-sage-200 focus:border-sage-400 focus:ring-2 focus:ring-sage-200 outline-none transition-all"
+                      placeholder={t({ fr: 'Votre nom complet', en: 'Your full name' })}
+                    />
+                    {errors.name && <p className="text-red-500 text-sm mt-1">{errors.name}</p>}
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <label className="block text-sage-700 font-medium mb-2">
+                      {t({ fr: 'Adresse', en: 'Address' })}
+                    </label>
+                    <input
+                      type="text"
+                      value={checkoutType === 'guest' ? guestForm.address : shippingForm.address}
+                      onChange={(e) => {
+                        if (checkoutType === 'guest') {
+                          setGuestForm({...guestForm, address: e.target.value});
+                        } else {
+                          setShippingForm({...shippingForm, address: e.target.value});
+                        }
+                      }}
+                      className="w-full px-4 py-3 rounded-xl border border-sage-200 focus:border-sage-400 focus:ring-2 focus:ring-sage-200 outline-none transition-all"
+                      placeholder={t({ fr: 'Votre adresse complète', en: 'Your full address' })}
+                    />
+                    {errors.address && <p className="text-red-500 text-sm mt-1">{errors.address}</p>}
+                  </div>
+
+                  <div>
+                    <label className="block text-sage-700 font-medium mb-2">
+                      {t({ fr: 'Ville', en: 'City' })}
+                    </label>
+                    <input
+                      type="text"
+                      value={checkoutType === 'guest' ? guestForm.city : shippingForm.city}
+                      onChange={(e) => {
+                        if (checkoutType === 'guest') {
+                          setGuestForm({...guestForm, city: e.target.value});
+                        } else {
+                          setShippingForm({...shippingForm, city: e.target.value});
+                        }
+                      }}
+                      className="w-full px-4 py-3 rounded-xl border border-sage-200 focus:border-sage-400 focus:ring-2 focus:ring-sage-200 outline-none transition-all"
+                      placeholder={t({ fr: 'Votre ville', en: 'Your city' })}
+                    />
+                    {errors.city && <p className="text-red-500 text-sm mt-1">{errors.city}</p>}
+                  </div>
+
+                  <div>
+                    <label className="block text-sage-700 font-medium mb-2">
+                      {t({ fr: 'Code postal', en: 'Postal Code' })}
+                    </label>
+                    <input
+                      type="text"
+                      value={checkoutType === 'guest' ? guestForm.postalCode : shippingForm.postalCode}
+                      onChange={(e) => {
+                        if (checkoutType === 'guest') {
+                          setGuestForm({...guestForm, postalCode: e.target.value});
+                        } else {
+                          setShippingForm({...shippingForm, postalCode: e.target.value});
+                        }
+                      }}
+                      className="w-full px-4 py-3 rounded-xl border border-sage-200 focus:border-sage-400 focus:ring-2 focus:ring-sage-200 outline-none transition-all"
+                      placeholder={t({ fr: 'Code postal', en: 'Postal code' })}
+                    />
+                    {errors.postalCode && <p className="text-red-500 text-sm mt-1">{errors.postalCode}</p>}
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <label className="block text-sage-700 font-medium mb-2">
+                      {t({ fr: 'Téléphone', en: 'Phone' })}
+                    </label>
+                    <input
+                      type="tel"
+                      value={checkoutType === 'guest' ? guestForm.phone : shippingForm.phone}
+                      onChange={(e) => {
+                        if (checkoutType === 'guest') {
+                          setGuestForm({...guestForm, phone: e.target.value});
+                        } else {
+                          setShippingForm({...shippingForm, phone: e.target.value});
+                        }
+                      }}
+                      className="w-full px-4 py-3 rounded-xl border border-sage-200 focus:border-sage-400 focus:ring-2 focus:ring-sage-200 outline-none transition-all"
+                      placeholder={t({ fr: 'Votre numéro de téléphone', en: 'Your phone number' })}
+                    />
+                    {errors.phone && <p className="text-red-500 text-sm mt-1">{errors.phone}</p>}
+                  </div>
+                </div>
+              </div>
 
               {/* Payment Method */}
               <div>
